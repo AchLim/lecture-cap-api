@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-# lecture-cap-api
-Lecture Cap API is a FastAPI-based application that transcribes speech to text and summarizes lecture recordings. It leverages Wav2Vec2 for Indonesian speech recognition and NLP models for summarization, making it ideal for students, educators, and e-learning platforms.
-=======
 # 🎤 Lecture Cap API  
 
 ## 📌 Project Overview  
@@ -50,4 +46,3 @@ This project is licensed under the MIT License.
 
 ## 🤝 Contributing  
 We welcome contributions! Feel free to fork the repo, create a new branch, and submit a pull request.  
->>>>>>> efaa2cb (Initial commit)
