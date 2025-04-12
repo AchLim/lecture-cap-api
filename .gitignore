@@ -168,8 +168,6 @@ cython_debug/
 #.idea/
 
 # PyPI configuration file
-<<<<<<< HEAD
 .pypirc
-=======
-.pypirc
->>>>>>> efaa2cb (Initial commit)
+
+app/models/*
