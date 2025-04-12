@@ -3,11 +3,11 @@ import whisper
 import tempfile
 from fastapi import APIRouter, UploadFile, File, HTTPException
 
-from api.tools.genai_client import generate_content
+from app.tools.genai_client import generate_content
 
 
 # Load the Whisper model
-model = whisper.load_model("small")
+model = whisper.load_model("tiny")
 
 router = APIRouter()
 

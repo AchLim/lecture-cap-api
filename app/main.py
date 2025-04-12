@@ -1,7 +1,7 @@
 import uvicorn
 
 from fastapi import FastAPI
-from api.routers import transcribe, summarize
+from app.routers import transcribe, summarize
 
 app = FastAPI(title="Lecture Cap API")
 

@@ -5,7 +5,7 @@ import os
 
 from fastapi import APIRouter, File, UploadFile, HTTPException
 from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC
-from api.tools.utils import convert_to_wav
+from app.tools.utils import convert_to_wav
 
 router = APIRouter()
 
