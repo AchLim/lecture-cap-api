@@ -49,5 +49,5 @@ async def transcribe_audio(file: UploadFile = File(...)):
     finally:
         os.remove(input_path)  # Clean up the temporary file
         
-        return {'text': output}
+    return {'text': output}
     
