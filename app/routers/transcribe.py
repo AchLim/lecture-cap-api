@@ -1,21 +1,32 @@
 import os
+import requests
 import whisper
 import tempfile
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from pydantic import BaseModel
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from app.auth.dependencies import get_current_user
 
 from app.tools.genai_client import generate_content
 
 
 # Load the Whisper model
-model = whisper.load_model("tiny")
+model = whisper.load_model("small")
 
 router = APIRouter()
+
+class TranscribeRequest(BaseModel):
+    file_id: str
+    access_token: str
+
+GOOGLE_DRIVE_DOWNLOAD_URL = "https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
+
 
 def rephrase_text_structure_with_gemini(text: str):
     prompt = """
         Anda adalah seorang profesional dalam menyusun teks yang jelas, 
         terstruktur, dan mudah dipahami. Berikut adalah transkrip teks 
-        hasil konversi dari audio. Tugas Anda adalah merapikan struktur 
+        hasil konversi dari audio (campuran dari Bahasa Indonesia dan Bahasa Inggris). 
+        Tugas Anda adalah merapikan struktur 
         kalimat, memperbaiki tata bahasa, serta menyempurnakan gaya 
         penulisan agar lebih profesional dan alami tanpa mengubah makna aslinya. 
         Berikan hasil akhir dalam satu paragraf, tanpa baris baru, 
@@ -51,3 +62,36 @@ async def transcribe_audio(file: UploadFile = File(...)):
         
     return {'text': output}
     
+
+@router.post("/alt")
+async def transcribe_audio_alt(
+    payload: TranscribeRequest,
+):
+    try:
+        headers = {"Authorization": f"Bearer {payload.access_token}"}
+
+        file_id = payload.file_id
+        file_url = GOOGLE_DRIVE_DOWNLOAD_URL.format(file_id=file_id)
+
+        # Download file from Google Drive
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+            input_path = tmp.name
+            response = requests.get(file_url, headers=headers, stream=True)
+            if response.status_code != 200:
+                raise HTTPException(status_code=400, detail="Failed to download audio from Google Drive")
+            for chunk in response.iter_content(chunk_size=8192):
+                tmp.write(chunk)
+
+        # Transcribe
+        result = model.transcribe(input_path, fp16=False)
+        transcribe_result = result.get("text", "N/A")
+        output = rephrase_text_structure_with_gemini(transcribe_result)
+
+        # todo: remove \n, \" \", etc.
+
+    except Exception as e:
+        raise e
+    finally:
+        os.remove(input_path)
+    
+    return output
