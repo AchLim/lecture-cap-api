@@ -43,9 +43,11 @@ def custom_openapi():
         return app.openapi_schema
     openapi_schema = get_openapi(
         title=app.title,
+        summary=app.summary,
         version=app.version,
         description=app.description,
         routes=app.routes,
+        servers=app.servers,
     )
     openapi_schema["components"]["securitySchemes"] = {
         "BearerAuth": {
