@@ -2,3 +2,4 @@ google-genai
 uvicorn[standard]
 fastapi[standard]
 openai-whisper
+firebase-admin
