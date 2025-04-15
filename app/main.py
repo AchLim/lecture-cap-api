@@ -10,11 +10,16 @@ from app.auth.dependencies import get_current_user
 
 app = FastAPI(
     title="Lecture Cap API",
-    summary="Lecture Cap is a mobile application designed to assist students in recording lectures, generating transcripts, and summarizing content using AI technology.",
-    description="- Vincent Lim - 2231045\n- Jackson - 2231042\n- Jhony Susanto - 2231044\n- Erwin - 2231058\n- Josua Yoprisyanto - 2231082\n- Syasya Tri Puspita Dewi - 2231123\n",
+    summary="""
+        Lecture Cap is a mobile application developed to support students in recording lectures, generating transcripts, and summarizing content using advanced AI technology.
+    """,
+    description="""The application utilizes Firebase Authentication to manage user authentication, ensuring secure access through tokens handled by Firebase. Additionally, it integrates with Google Drive for external data storage, enabling efficient and reliable management of notes and audio recordings.\n
+- Vincent Lim - 2231045\n- Jackson - 2231042\n- Jhony Susanto - 2231044\n- Erwin - 2231058\n- Josua Yoprisyanto - 2231082\n- Syasya Tri Puspita Dewi - 2231123
+    """,
     version="1.0.0",
     servers=[{
         'url': 'http://lcapapiv1noip.ddns.net',
+        'description': 'Main Production Server'
     }]
 )
 
@@ -33,9 +38,47 @@ app.include_router(
     dependencies=[Depends(get_current_user)]
 )
 
-@app.get("/")
+@app.get(
+    "/",
+    tags=["Root"],
+    summary="Root Endpoint",
+    description="Returns a welcome message for the Lecture Cap API.",
+    responses={
+        200: {
+            "description": "API is reachable",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Welcome to Lecture Cap API"
+                    }
+                }
+            }
+        }
+    }
+)
 def root():
     return {"message": "Welcome to Lecture Cap API"}
+
+@app.get(
+    "/ping",
+    tags=["Health Check"],
+    summary="Health check endpoint",
+    description="Simple endpoint to verify if the API is running.",
+    responses={
+        200: {
+            "description": "API is healthy and reachable",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "ok"
+                    }
+                }
+            }
+        }
+    }
+)
+def ping():
+    return {"status": "ok"}
 
 # ✅ Inject Bearer token into Swagger
 def custom_openapi():
