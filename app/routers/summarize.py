@@ -31,10 +31,10 @@ class TextRequest(BaseModel):
             }
         },
         401: {
-            "description": "Unauthorized - Invalid or missing token",
+            "description": "Unauthorized - Token verification failed",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Invalid or missing token"}
+                    "example": {"detail": "Token verification failed"}
                 }
             }
         },

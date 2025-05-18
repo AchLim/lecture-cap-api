@@ -2,9 +2,13 @@ import os
 import requests
 import whisper
 import tempfile
+import json
+
+from uuid import UUID
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from fastapi.responses import JSONResponse
+
 from app.auth.dependencies import get_current_user
 
 from app.tools.genai_client import generate_content
@@ -20,25 +24,42 @@ router = APIRouter()
 class TranscribeRequest(BaseModel):
     file_id: str = Field(..., example="1abc23XYZfileId")
     access_token: str = Field(..., example="ya29.a0ARrdaM-example-access-token")
+    note_id: UUID
 
 GOOGLE_DRIVE_DOWNLOAD_URL = "https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
+GOOGLE_DRIVE_UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files/{file_id}?uploadType=media"
+GOOGLE_DRIVE_CREATE_URL = "https://www.googleapis.com/upload/drive/v3/files?uploadType=media"
+GOOGLE_DRIVE_FILE_LIST_URL = (
+    "https://www.googleapis.com/drive/v3/files"
+    "?q=name='notes.json' and trashed=false"
+    "&spaces=appDataFolder"
+)
+
 
 
 def rephrase_text_structure_with_gemini(text: str):
     prompt = """
-        Anda adalah seorang profesional dalam menyusun teks yang jelas, 
-        terstruktur, dan mudah dipahami. Berikut adalah transkrip teks 
-        hasil konversi dari audio (campuran dari Bahasa Indonesia dan Bahasa Inggris). 
-        Tugas Anda adalah merapikan struktur 
-        kalimat, memperbaiki tata bahasa, serta menyempurnakan gaya 
-        penulisan agar lebih profesional dan alami tanpa mengubah makna aslinya. 
-        Berikan hasil akhir dalam satu paragraf, tanpa baris baru, 
-        tanpa simbol pemformatan, tanpa tanda kutip ("), 
-        tanpa karakter garis miring terbalik (\\), dan tanpa karakter khusus lainnya. 
-        Hasilkan hanya teks polos yang rapi dan mengalir alami. 
-        Jangan sertakan penjelasan—langsung berikan hasil transkrip yang telah diperbaiki.
-        Bila terdapat masalah atau error, cukup berikan respon "Error".
-        Berikut transkrip yang perlu diperbaiki:
+        Anda adalah seorang profesional dalam menyusun teks yang jelas, terstruktur, dan mudah dipahami. Berikut adalah transkrip hasil konversi dari audio yang mungkin mengandung campuran Bahasa Indonesia dan Inggris.
+
+        Tugas Anda:
+        - Merapikan struktur kalimat
+        - Memperbaiki tata bahasa
+        - Menyempurnakan gaya penulisan agar terdengar profesional dan alami
+        - Menentukan satu judul yang paling representatif terhadap isi transkrip
+
+        Output HARUS mengikuti format persis berikut (tanpa baris baru, tanpa tanda kutip, tanpa simbol pemformatan seperti tanda bintang, garis miring, tanda petik, atau karakter khusus lainnya):
+
+        JUDUL:::ISI_TRANSKRIPSI
+
+        Keterangan:
+        - Judul harus singkat, padat, dan relevan dengan isi transkrip.
+        - ISI_TRANSKRIPSI harus berupa satu paragraf panjang, tidak dipisah baris, mengalir alami, dan mudah dipahami.
+
+        Jika transkrip kosong, tidak terbaca, atau tidak dapat diproses, cukup hasilkan teks berikut (tanpa tambahan apa pun):
+
+        Tidak dapat membuat ringkasan:::Transkripsi tidak tersedia atau tidak dapat diproses.
+
+        Berikut transkrip yang perlu diperbaiki dan dirangkum:
     """
     try:
         response = generate_content(
@@ -90,6 +111,14 @@ def rephrase_text_structure_with_gemini(text: str):
                 }
             }
         },
+        401: {
+            "description": "Unauthorized - Token verification failed",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Token verification failed"}
+                }
+            }
+        },
         422: {
             "description": "Validation Error - Missing or invalid input format",
             "content": {
@@ -122,10 +151,9 @@ async def transcribe_audio(
     try:
         headers = {"Authorization": f"Bearer {payload.access_token}"}
 
-        file_id = payload.file_id
-        file_url = GOOGLE_DRIVE_DOWNLOAD_URL.format(file_id=file_id)
+        file_url = GOOGLE_DRIVE_DOWNLOAD_URL.format(file_id=payload.file_id)
 
-        # Download file from Google Drive
+        # 1. Download audio from user's Google Drive
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
             input_path = tmp.name
             response = requests.get(file_url, headers=headers, stream=True)
@@ -134,15 +162,67 @@ async def transcribe_audio(
             for chunk in response.iter_content(chunk_size=8192):
                 tmp.write(chunk)
 
-        # Transcribe
+        # 2. Transcribe using Whisper
         result = model.transcribe(input_path, fp16=False)
-        transcribe_result = result.get("text", "N/A")
-        output = rephrase_text_structure_with_gemini(transcribe_result)
-        output = clean_text(output)
+        raw_text = result.get("text", "").strip()
+
+        # 3. Clean using Gemini + utility
+        cleaned_text = clean_text(rephrase_text_structure_with_gemini(raw_text))
+        if ':::' in cleaned_text:
+            title, content = cleaned_text.split(':::', 1)
+        else:
+            title = "Tidak dapat membuat ringkasan"
+            content = "Transkripsi tidak tersedia atau tidak dapat diproses."
+
+        # Step 4: Read current notes.json (if exists)
+        notes = []
+        notes_file_id = None
+        list_resp = requests.get(GOOGLE_DRIVE_FILE_LIST_URL, headers=headers)
+        if list_resp.ok:
+            files = list_resp.json().get("files", [])
+            if files:
+                notes_file_id = files[0]["id"]
+                notes_resp = requests.get(GOOGLE_DRIVE_DOWNLOAD_URL.format(file_id=notes_file_id), headers=headers)
+                if notes_resp.ok:
+                    try:
+                        notes = notes_resp.json()
+                    except Exception:
+                        notes = []
+        
+        # Step 5: Update existing note instead of appending
+        updated_note = None
+        for note in notes:
+            if note.get("id") == str(payload.note_id):
+                note.update({
+                    'title': title,
+                    'isTranscribed': True,
+                    'content': content,
+                    'originalContent': content,
+                })
+                updated_note = note
+                break
+
+        if not updated_note:
+            raise HTTPException(status_code=404, detail="Note not found in notes.json")
+
+
+        # Step 7: Save updated notes.json
+        update_resp = requests.patch(
+            GOOGLE_DRIVE_UPLOAD_URL.format(file_id=notes_file_id),
+            headers={
+                **headers,
+                "Content-Type": "application/json"
+            },
+            data=json.dumps(notes),
+        )
+        if not update_resp.ok:
+            raise HTTPException(status_code=500, detail="Failed to update notes.json on Google Drive")
+
+        return JSONResponse(content={"success": True, "message": "Note transcribed successfully."})
 
     except Exception as e:
         raise e
     finally:
         os.remove(input_path)
     
-    return JSONResponse(content={"text": output})
+    return JSONResponse(content={"message": "Note updated successfully.", "note_id": str(payload.note_id)})
